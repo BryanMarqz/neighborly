@@ -17,4 +17,4 @@ function connect_to_database() {
         error_log("Database connection failed: " . $e->getMessage());
         die("Database connection failed.");
     }
-}>
+}
