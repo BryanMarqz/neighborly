@@ -6,7 +6,7 @@ function connect_to_database() {
     $port = 3306;
     $dbname = 'neighborly';
     $username = 'root';
-    $password = 'Pitagoras123!';
+    $password = '';
     
     try {
         $pdo = new PDO("mysql:host=$host;port=$port;dbname=$dbname", $username, $password);

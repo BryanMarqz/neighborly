@@ -28,19 +28,24 @@ $userRole = $_SESSION['role'] ?? null;
         <div class="topbar-inner">
             <div class="topbar-logo">Neighborly</div>
 
-            <?php if (!$authPage && $isLoggedIn): ?>
+            <?php if (!$authPage): ?>
                 <nav class="topbar-nav">
                     <a href="timeline.php">Timeline</a>
-                    
-                    <?php if ($userRole === 'volunteer'): ?>
-                        <a href="volunteer_profile.php">Profile</a>
-                    <?php elseif ($userRole === 'organizer'): ?>
-                        <a href="organizer_profile.php">Organization</a>
-                    <?php elseif ($userRole === 'admin'): ?>
-                        <a href="admin_panel.php">Admin Panel</a>
+
+                    <?php if ($isLoggedIn): ?>
+                        <?php if ($userRole === 'volunteer'): ?>
+                            <a href="volunteer_profile.php">Profile</a>
+                        <?php elseif ($userRole === 'organizer'): ?>
+                            <a href="organizer_profile.php">Organization</a>
+                        <?php elseif ($userRole === 'admin'): ?>
+                            <a href="admin_panel.php">Admin Panel</a>
+                        <?php endif; ?>
+
+                        <a href="logout.php">Sign Out</a>
+                    <?php else: ?>
+                        <a href="login.php">Log In</a>
+                        <a href="register.php">Sign Up</a>
                     <?php endif; ?>
-                    
-                    <a href="logout.php">Sign Out</a>
                 </nav>
             <?php endif; ?>
         </div>
