@@ -13,6 +13,13 @@ if (!file_exists($locationsPath)) {
 }
 $locations = require $locationsPath;
 
+$selectedTown = $_GET['town'] ?? '';
+if ($selectedTown !== '' && !in_array($selectedTown, $locations, true)) {
+    $selectedTown = '';
+}
+
+$searchQuery = trim($_GET['q'] ?? '');
+
 try {
     $pdo = connect_to_database();
     $skills_stmt = $pdo->prepare("SELECT skill_id, skill_name FROM skills ORDER BY skill_name");
@@ -266,8 +273,8 @@ try {
     $pdo = connect_to_database();
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     
-    $stmt = $pdo->prepare("
-        SELECT 
+    $sql = "
+        SELECT
             event_id,
             title,
             location,
@@ -277,12 +284,31 @@ try {
             description,
             organizer_id
         FROM events
-        WHERE is_approved = 1 
+        WHERE is_approved = 1
         AND status = 'active'
-        ORDER BY start_date ASC
-    ");
-    
-    $stmt->execute();
+    ";
+    $params = [];
+    if ($selectedTown !== '') {
+        $sql .= " AND location = :town";
+        $params['town'] = $selectedTown;
+    }
+    if ($searchQuery !== '') {
+        $sql .= "
+            AND (
+                title LIKE :search_title
+                OR description LIKE :search_description
+                OR organizer_id IN (SELECT user_id FROM organizers WHERE org_name LIKE :search_org)
+            )
+        ";
+        $searchTerm = '%' . $searchQuery . '%';
+        $params['search_title'] = $searchTerm;
+        $params['search_description'] = $searchTerm;
+        $params['search_org'] = $searchTerm;
+    }
+    $sql .= " ORDER BY start_date ASC";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
     $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
     
     $opportunities = [];
@@ -367,6 +393,34 @@ ob_start();
 <p class="helper">
     Discover volunteer opportunities in your community.
 </p>
+<form method="get" action="timeline.php" id="timeline-filter-form" class="timeline-filters">
+    <div class="filter-field">
+        <label for="opportunity-search">Search</label>
+        <input type="text" id="opportunity-search" name="q" placeholder="Search by title, description, or organization"
+               value="<?php echo htmlspecialchars($searchQuery); ?>">
+    </div>
+    <div class="filter-field town-combo" id="town-combo">
+        <label for="town-search-input">Filter by town</label>
+        <input type="text" id="town-search-input" class="town-combo-input" autocomplete="off"
+               placeholder="All towns"
+               value="<?php echo htmlspecialchars($selectedTown); ?>">
+        <input type="hidden" name="town" id="town-value" value="<?php echo htmlspecialchars($selectedTown); ?>">
+        <div class="town-combo-list" id="town-combo-list" hidden>
+            <div class="town-combo-option" data-value="">All towns</div>
+            <?php foreach ($locations as $location): ?>
+                <div class="town-combo-option" data-value="<?php echo htmlspecialchars($location); ?>">
+                    <?php echo htmlspecialchars($location); ?>
+                </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    <div class="filter-field filter-actions">
+        <button type="submit" class="btn">Search</button>
+        <?php if ($selectedTown !== '' || $searchQuery !== ''): ?>
+            <a href="timeline.php" class="btn btn-outline">Clear</a>
+        <?php endif; ?>
+    </div>
+</form>
 <?php if (isset($_SESSION['user_id']) && $_SESSION['role'] === 'organizer'): ?>
     <div style="margin-bottom: 1.5rem; text-align: right;">
         <button type="button" id="create-event-btn" class="btn" style="background-color: #28a745; color: white;">
@@ -459,7 +513,15 @@ ob_start();
 <div id="timeline" class="timeline">
     <?php if (empty($opportunities)): ?>
         <p class="helper" style="text-align: center; padding: 2rem;">
-            No opportunities available at the moment. Check back soon!
+            <?php if ($searchQuery !== '' && $selectedTown !== ''): ?>
+                No opportunities matching "<?php echo htmlspecialchars($searchQuery); ?>" in <?php echo htmlspecialchars($selectedTown); ?> right now. Check back soon!
+            <?php elseif ($searchQuery !== ''): ?>
+                No opportunities matching "<?php echo htmlspecialchars($searchQuery); ?>" right now. Check back soon!
+            <?php elseif ($selectedTown !== ''): ?>
+                No opportunities available in <?php echo htmlspecialchars($selectedTown); ?> right now. Check back soon!
+            <?php else: ?>
+                No opportunities available at the moment. Check back soon!
+            <?php endif; ?>
         </p>
     <?php else: ?>
         <?php foreach ($opportunities as $opp): ?>
@@ -541,6 +603,76 @@ ob_start();
 </div>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    const townCombo = document.getElementById('town-combo');
+    const townInput = document.getElementById('town-search-input');
+    const townValue = document.getElementById('town-value');
+    const townList = document.getElementById('town-combo-list');
+    const townOptions = townList ? Array.from(townList.querySelectorAll('.town-combo-option')) : [];
+    const filterForm = document.getElementById('timeline-filter-form');
+
+    function openTownList() {
+        townList.hidden = false;
+    }
+
+    function closeTownList() {
+        townList.hidden = true;
+    }
+
+    function filterTownOptions(query) {
+        const normalized = query.trim().toLowerCase();
+        townOptions.forEach(function(option) {
+            const matches = option.dataset.value === '' || option.textContent.trim().toLowerCase().includes(normalized);
+            option.classList.toggle('hidden', !matches);
+        });
+    }
+
+    function selectTown(option) {
+        townValue.value = option.dataset.value;
+        townInput.value = option.dataset.value === '' ? '' : option.textContent.trim();
+        closeTownList();
+        filterForm.requestSubmit();
+    }
+
+    if (townCombo && townInput && townValue && townList) {
+        townInput.addEventListener('focus', function() {
+            filterTownOptions(townInput.value === townValue.value ? '' : townInput.value);
+            openTownList();
+        });
+
+        townInput.addEventListener('input', function() {
+            filterTownOptions(townInput.value);
+            openTownList();
+        });
+
+        townInput.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeTownList();
+                return;
+            }
+            if (event.key === 'Enter' && !townList.hidden) {
+                const firstMatch = townOptions.find(function(option) {
+                    return !option.classList.contains('hidden');
+                });
+                if (firstMatch) {
+                    event.preventDefault();
+                    selectTown(firstMatch);
+                }
+            }
+        });
+
+        townOptions.forEach(function(option) {
+            option.addEventListener('click', function() {
+                selectTown(option);
+            });
+        });
+
+        document.addEventListener('click', function(event) {
+            if (!townCombo.contains(event.target)) {
+                closeTownList();
+            }
+        });
+    }
+
     const createEventBtn = document.getElementById('create-event-btn');
     const modal = document.getElementById('create-event-modal');
     const closeModal = document.getElementById('close-modal');
